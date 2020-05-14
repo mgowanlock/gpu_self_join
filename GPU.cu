@@ -207,7 +207,7 @@ unsigned long long callGPUBatchEst(unsigned int * DBSIZE, DTYPE* dev_database, D
 
 
 	#if COUNTMETRICS==1	
-	gpuErrchk( debug1, dev_debug1, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+	gpuErrchk(cudaMemcpy( debug1, dev_debug1, sizeof(unsigned int), cudaMemcpyDeviceToHost));
 	printf("\nGPU: sampled number of cells visited: %u",*debug1);
 	#endif	
 
@@ -990,7 +990,7 @@ void distanceTableNDGridBatches(std::vector<std::vector<DTYPE> > * NDdataPoints,
 
 #if COUNTMETRICS == 1
         cudaMemcpy(workCounts, dev_workCounts, 2*sizeof(CTYPE), cudaMemcpyDeviceToHost );
-        printf("\nPoint comparisons: %lu, Cell evaluations: %lu", workCounts[0],workCounts[1]);
+        printf("\nPoint comparisons: %llu, Cell evaluations: %llu", workCounts[0],workCounts[1]);
 #endif
 
 	
