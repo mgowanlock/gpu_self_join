@@ -119,7 +119,7 @@ struct gridCellLookup{
 unsigned int idx; //idx in the "grid" struct array
 uint64_t gridLinearID; //The linear ID of the grid cell
 //compare function for linearID
-  bool operator<(const gridCellLookup & other) const
+  __host__ __device__  bool operator<(const gridCellLookup & other) const
   {
     return gridLinearID < other.gridLinearID;
   }
