@@ -17,16 +17,16 @@ if __name__ == "__main__":
 
     #parameters
     
-    fname="~/SNAPS/data/SNAPS_v1/SNAPShot1_normalized_3_features.csv"
+    fname="test_dat.txt"
     df = pd.read_csv(fname, delimiter=',', header=None)
 
     #flatten data to a list which is required by the library
     dataset = df.values.flatten().tolist()
-    epsilon = 0.10
+    epsilon = 1.0
     
-    verbose=True #True/False --- this is the C output from the shared library
+    verbose=False #True/False --- this is the C output from the shared library
     dtype="float"
-    numdim=3
+    numdim=2
     
 
     numNeighbors, neighborTable, outlierRanking = dssj.gdsjoin(dataset, epsilon, numdim, dtype, verbose)    
