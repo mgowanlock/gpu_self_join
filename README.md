@@ -24,6 +24,26 @@ To run the code:
 * For example "$./main test.txt 1.0 4 3" will compute the self-join on a 4-dimensional dataset stored in test.txt using a search distance of 1.0.
 * The program outputs a file called gpu_stats.txt which prints the total execution time, the total result set size, the dataset file name and all of the parameters used.
 
+## Overview: Python Interface
+A Python interface has been provided that uses a shared library to access the C/CUDA code. This may allow you to skip reading all of the details below. But, if you're interested in the C/CUDA implementation then skip this section.
+
+To use the Python interface, edit the makefile with your settings and compile the shared library using the Makefile target as follows:
+$make make_python_shared_lib
+
+The settings that you will need to update are:
+* The desired data dimensionality and number of indexed dimensions.
+* The compute capability of your GPU.
+* Any changes to the params.h file (described below). It is unlikely that you will need to change any parameters, although one common change might be to use doubles instead of floats.
+
+After compiling the shared library, you can use the Python interface, where gdsjoingpu.py is Python wrapper around the C/CUDA code, and GDSJoin_test_example.py shows an example of using the library.
+
+The interface returns the number of neighbors found for each object, the neighbortable which is the list of which point ids are within epsilon of each point in the dataset, and an outlier ranking, which is an extra feature for using the distance similarity search for outlier detection. It ranks each point where rank 0 means it has the fewest neighbors and rank |D|-1 means that it has the greatest number of neighbors within its search radius. This is likely not of interest to most users.
+
+Note that the neighborTable is stored as one 1-D contiguous array, so to obtain the list of neighbors for each point in Python, you need to use the numNeighbors array.
+
+The interface is below:
+numNeighbors, neighborTable, outlierRanking = dssj.gdsjoin(dataset, epsilon, numdim, dtype, verbose) 
+
 ## Parameters
 
 The file params.h specifies parameters and optimizations. Default values and categorization into low or high dimensionality are outlined below. The parameter names are in uppercase.
