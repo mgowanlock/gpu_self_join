@@ -10,7 +10,11 @@
 #include <string>
 #include "GPU.h"
 #include "kernel.h"
+
+#ifndef PYTHON
 #include "tree_index.h"
+#endif
+
 #include <math.h>
 #include <queue>
 #include <iomanip>
@@ -19,6 +23,7 @@
 #include <thrust/sort.h>
 #include <thrust/host_vector.h>
 #include <thrust/execution_policy.h>
+
 
 //for printing defines as strings
 #define STR_HELPER(x) #x
@@ -41,9 +46,27 @@ void importNDDataset(std::vector<std::vector <DTYPE> > *dataPoints, char * fname
 void CPUBruteForceTable(std::vector<std::vector <DTYPE> > *NDdataPoints, DTYPE epsilon, table * neighborTable, unsigned int * totalNeighbors);
 void sortInNDBins(std::vector<std::vector <DTYPE> > *dataPoints);
 void ReorderByDimension(std::vector<std::vector <DTYPE> > *NDdataPoints);
+void storeOutlierScoresForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors, unsigned int * outlierScoreArr);
 
+//printing of the neighbortable for outlier detection
+void printNeighborTable(unsigned int databaseSize, struct neighborTableLookup * neighborTable);
+void printOutlierScores(unsigned int databaseSize, struct neighborTableLookup * neighborTable);
+
+//store the neighbors for python wrapper
+unsigned int * storeNeighborTableContiguousPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable);
+
+//sort ascending
+bool compareByPointValue(const keyValNumPointsStruct &a, const keyValNumPointsStruct &b)
+{
+    return a.counts < b.counts;
+}
+
+#ifndef PYTHON //standard C version
 int main(int argc, char *argv[])
 {
+
+	//check that the number of data dimensions is greater than or equal to the number of indexed dimensions
+	assert(GPUNUMDIM>=NUMINDEXEDDIM);
 		
 	omp_set_nested(1);	
 	/////////////////////////
@@ -244,15 +267,16 @@ int main(int argc, char *argv[])
 
 	#if PRINTNEIGHBORTABLE==1
 	#if STAMP==0
-	for (int i=0; i<NDdataPoints.size(); i++){
-		// sort to compare against CPU implementation
-		std::sort(neighborTable[i].dataPtr+neighborTable[i].indexmin,neighborTable[i].dataPtr+neighborTable[i].indexmax+1);
-		printf("\npoint id: %d, neighbors: ",i);
-		for (int j=neighborTable[i].indexmin; j<=neighborTable[i].indexmax; j++){
-			printf("%d,",neighborTable[i].dataPtr[j]);
-		}
+	printNeighborTable(NDdataPoints.size(), neighborTable);
+	// for (int i=0; i<NDdataPoints.size(); i++){
+	// 	// sort to compare against CPU implementation
+	// 	std::sort(neighborTable[i].dataPtr+neighborTable[i].indexmin,neighborTable[i].dataPtr+neighborTable[i].indexmax+1);
+	// 	printf("\npoint id: %d, neighbors: ",i);
+	// 	for (int j=neighborTable[i].indexmin; j<=neighborTable[i].indexmax; j++){
+	// 		printf("%d,",neighborTable[i].dataPtr[j]);
+	// 	}
 		
-	}
+	// }
 
 	
 	// For printing number of neighbors per object (with coords):
@@ -302,6 +326,19 @@ int main(int argc, char *argv[])
 	}
 	#endif //end if stamp==1
 	#endif //endif print neighbortable
+
+
+	#if PRINTOUTLIERSCORES==1
+	#if STAMP==0
+	printOutlierScores(NDdataPoints.size(), neighborTable);
+	#endif
+
+	#if STAMP==1
+	printf("\nError PRINTOUTLIERSCORES==1: Note that printing the outliers was only implemented when unicomp is disabled (STAMP==0).\n")
+	#endif
+
+
+	#endif
 }
 
 
@@ -324,7 +361,322 @@ if(SEARCHMODE == 9) {
 	printf("\n");
 	return 0;
 }
+#endif //end #if not Python (standard C version)
 
+
+#ifdef PYTHON
+//this is a pointer used that will get used from the Python interface
+//Needs to be global
+unsigned int * neighborTableResultContiguous;
+//the last two returned arrays are for using DSSJ for outlier detection: outNumNeighborsWithinEps, outOutlierRanking 
+extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon, unsigned int NDIM, unsigned int * outNumNeighborsWithinEps, unsigned int * outOutlierRanking)
+{
+
+	//check that the number of data dimensions is greater than or equal to the number of indexed dimensions
+	assert(GPUNUMDIM>=NUMINDEXEDDIM);
+		
+	omp_set_nested(1);	
+	/////////////////////////
+	// Get information from command line
+	//1) the dataset, 2) epsilon, 3) number of dimensions
+	/////////////////////////
+
+	
+	if (GPUNUMDIM!=NDIM){
+		printf("\nERROR: The number of dimensions defined for the GPU in the shared library is not the same as the number of dimensions defined in the Python interface.\n GPUNUMDIM=%d, NDIM=%d Exiting!!!",GPUNUMDIM,NDIM);
+		return;
+	}
+
+	
+	printf("\nEpsilon: %f",epsilon);
+	printf("\nNumber of dimensions (NDIM): %d\n",NDIM);
+
+	//////////////////////////////
+	//import the dataset:
+	/////////////////////////////
+	
+	
+	std::vector<std::vector <DTYPE> > NDdataPoints;
+
+	//copy data into the dataset vector
+
+  	for (unsigned int i=0; i<NUMPOINTS; i++){
+  		unsigned int idxMin=i*GPUNUMDIM;
+  		unsigned int idxMax=(i+1)*GPUNUMDIM;
+		std::vector<DTYPE>tmpPoint(dataset+idxMin, dataset+idxMax);
+		NDdataPoints.push_back(tmpPoint);
+	}
+	
+
+
+	char fname[]="gpu_stats.txt";
+	ofstream gpu_stats;
+	gpu_stats.open(fname,ios::app);	
+
+	printf("\n*****************\nWarming up GPU:\n*****************\n");
+	warmUpGPU();
+	printf("\n*****************\n");
+
+	DTYPE * minArr= new DTYPE[NUMINDEXEDDIM];
+	DTYPE * maxArr= new DTYPE[NUMINDEXEDDIM];
+	unsigned int * nCells= new unsigned int[NUMINDEXEDDIM];
+	uint64_t totalCells=0;
+	unsigned int nNonEmptyCells=0;
+	uint64_t totalNeighbors =0;
+	double totalTime=0;
+	double timeReorderByDimVariance=0;	
+
+	#if REORDER==1
+	double reorder_start=omp_get_wtime();
+	ReorderByDimension(&NDdataPoints);
+	double reorder_end=omp_get_wtime();
+	timeReorderByDimVariance= reorder_end - reorder_start;
+	#endif
+
+	
+	double tstart_index=omp_get_wtime();
+	generateNDGridDimensions(&NDdataPoints,epsilon, minArr, maxArr, nCells, &totalCells);
+	printf("\nGrid: total cells (including empty) %lu",totalCells);
+
+		
+
+
+
+	// allocate memory for index now that we know the number of cells
+	//the grid struct itself
+	//the grid lookup array that accompanys the grid -- so we only send the non-empty cells
+	struct grid * index; //allocate in the populateDNGridIndexAndLookupArray -- only index the non-empty cells
+	struct gridCellLookup * gridCellLookupArr; //allocate in the populateDNGridIndexAndLookupArray -- list of non-empty cells
+
+	//the grid cell mask tells you what cells are non-empty in each dimension
+	//used for finding the non-empty cells that you want
+	unsigned int * gridCellNDMask; //allocate in the populateDNGridIndexAndLookupArray -- list of cells in each n-dimension that have elements in them
+	unsigned int * nNDMaskElems= new unsigned int; //size of the above array
+	unsigned int * gridCellNDMaskOffsets=new unsigned int [NUMINDEXEDDIM*2]; //offsets into the above array for each dimension
+																	//as [min,max,min,max,min,max] (for 3-D)	
+
+	//ids of the elements in the database that are found in each grid cell
+	unsigned int * indexLookupArr=new unsigned int[NDdataPoints.size()]; 
+	populateNDGridIndexAndLookupArray(&NDdataPoints, epsilon, &gridCellLookupArr, &index, indexLookupArr, minArr,  nCells, totalCells, &nNonEmptyCells, &gridCellNDMask, gridCellNDMaskOffsets, nNDMaskElems);
+	// populateNDGridIndexAndLookupArrayParallel(&NDdataPoints, epsilon, &gridCellLookupArr, &index, indexLookupArr, minArr,  nCells, totalCells, &nNonEmptyCells, &gridCellNDMask, gridCellNDMaskOffsets, nNDMaskElems);
+	double tend_index=omp_get_wtime();
+	printf("\nTime to index (not counted in the time): %f", tend_index - tstart_index);
+	
+
+	//Neighbortable storage -- the result
+	neighborTableLookup * neighborTable= new neighborTableLookup[NDdataPoints.size()];
+	std::vector<struct neighborDataPtrs> pointersToNeighbors;
+
+	CTYPE* workCounts = (CTYPE*)malloc(2*sizeof(CTYPE));
+	workCounts[0]=0;
+	workCounts[1]=0;
+
+
+
+	pointersToNeighbors.clear();
+
+	double tstart=omp_get_wtime();	
+
+	distanceTableNDGridBatches(&NDdataPoints, &epsilon, index, gridCellLookupArr, &nNonEmptyCells,  minArr, nCells, indexLookupArr, neighborTable, &pointersToNeighbors, &totalNeighbors, gridCellNDMask, gridCellNDMaskOffsets, nNDMaskElems, workCounts);
+	
+	double tend=omp_get_wtime();
+
+	printf("\nTime: %f",(tend-tstart)+timeReorderByDimVariance);
+
+	totalTime+=(tend-tstart)+timeReorderByDimVariance;
+
+
+	//Print NeighborTable:
+
+	//We print based on whether unicomp is on or off.
+	//Some related neighbortable data are shown below.
+
+
+	//pointer for the python implementation to all of the neighbors
+	neighborTableResultContiguous=storeNeighborTableContiguousPython(NDdataPoints.size(), neighborTable);
+	
+
+	#if PRINTOUTLIERSCORES==1
+	#if STAMP==0
+
+	// printOutlierScores(NDdataPoints.size(), neighborTable);
+	storeOutlierScoresForPython(NDdataPoints.size(), neighborTable, outNumNeighborsWithinEps, outOutlierRanking);
+
+	#endif
+
+	#if STAMP==1
+	printf("\nError PRINTOUTLIERSCORES==1: Note that printing the outliers was only implemented when unicomp is disabled (STAMP==0).\n")
+	#endif
+
+
+	#endif
+
+	
+}
+
+extern "C" void copyResultIntoPythonArray(unsigned int * outPythonNeighborTable, unsigned int numResults)
+{
+	std::copy(neighborTableResultContiguous, neighborTableResultContiguous+numResults, outPythonNeighborTable);
+	free(neighborTableResultContiguous);
+}
+#endif //end #ifdef Python 
+
+unsigned int * storeNeighborTableContiguousPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable)
+{
+	//Determine total size of the result set
+	unsigned long int resultSize=0;
+	for (int i=0; i<databaseSize; i++){		
+		resultSize+=neighborTable[i].indexmax-neighborTable[i].indexmin+1;
+	}
+
+	//allocate memory for contiguous array
+	unsigned int * neighborTableResult = (unsigned int *)malloc(sizeof(unsigned int)*resultSize);
+
+	//this is for validation
+	// uint64_t totalCountNeighbors=0;
+	
+
+	unsigned long int cnt=0;
+	for (int i=0; i<databaseSize; i++){
+		for (int j=neighborTable[i].indexmin; j<=neighborTable[i].indexmax; j++){
+			
+			//store result for passing back to Python
+			neighborTableResult[cnt]=neighborTable[i].dataPtr[j];
+			//for validation
+			// totalCountNeighbors+=neighborTableResult[cnt];
+			//increment cnt
+			cnt++;
+		}
+	}
+
+	// printf("\nSum of indices of neighbors: %lu", totalCountNeighbors);
+	return neighborTableResult;
+
+}
+
+void printNeighborTable(unsigned int databaseSize, struct neighborTableLookup * neighborTable)
+{
+
+	char fname[]="DSSJ_out.txt";
+	ofstream DSSJ_out;
+	DSSJ_out.open(fname,ios::out);	
+
+	printf("\n\nOutputting neighbors to: %s\n", fname);
+	DSSJ_out<<"#data point (line is the point id), neighbor point ids\n";
+
+	for (int i=0; i<databaseSize; i++){
+		//sort to have increasing point IDs
+		std::sort(neighborTable[i].dataPtr+neighborTable[i].indexmin,neighborTable[i].dataPtr+neighborTable[i].indexmax+1);
+		for (int j=neighborTable[i].indexmin; j<=neighborTable[i].indexmax; j++){
+			DSSJ_out<<neighborTable[i].dataPtr[j]<<", ";
+		}
+		DSSJ_out<<"\n";
+		
+	}
+
+	DSSJ_out.close();
+}
+
+
+void printOutlierScores(unsigned int databaseSize,struct neighborTableLookup * neighborTable)
+{
+
+	///////////////////
+	//Outlier criterion: print the number of points each point has within epsilon
+
+
+	//For each point, compute the total squared distances to its k neighbors
+	unsigned int * totalNumberOfNeighbors = (unsigned int *)malloc(sizeof(unsigned int)*databaseSize);
+	struct keyValNumPointsStruct * keyValuePairPointIDNumNeighbors = (struct keyValNumPointsStruct *)malloc(sizeof(keyValNumPointsStruct)*databaseSize);
+	for (unsigned int i=0; i<databaseSize; i++)
+	{
+		totalNumberOfNeighbors[i]=neighborTable[i].indexmax-neighborTable[i].indexmin+1;
+		
+		//for sorting key/value pairs
+		keyValuePairPointIDNumNeighbors[i].pointID=i;
+		keyValuePairPointIDNumNeighbors[i].counts=totalNumberOfNeighbors[i];
+	}
+
+	//sort the point IDs and values by key/value pair
+	std::sort(keyValuePairPointIDNumNeighbors, keyValuePairPointIDNumNeighbors+databaseSize, compareByPointValue);
+	
+	//store the scores for each point in an array that will be printed
+	int * outlierScoreArr=(int *)malloc(sizeof(int)*databaseSize);
+
+	for(int i=0; i<databaseSize; i++)
+	{
+		int pointId=keyValuePairPointIDNumNeighbors[i].pointID;
+		outlierScoreArr[pointId]=i;
+	}
+
+	//end outlier criterion
+	///////////////////
+
+
+	//print to file for each point: its sum of distances to all points and its outlier ranking
+	
+	char fname[]="DSSJ_outlier_scores.txt";
+	ofstream DSSJ_out;
+	DSSJ_out.open(fname, ios::out);	
+
+	printf("\nOutputting outlier scores to: %s\n", fname);
+	DSSJ_out<<"#data point (line is the point id), col0: Number of neighbors the point has within epsilon, ";
+	DSSJ_out<<"col1: outlier ranking for col0\n";
+
+	for(int i=0; i<databaseSize; i++)
+	{
+		DSSJ_out<<totalNumberOfNeighbors[i]<<", "<<outlierScoreArr[i]<<endl;
+	}
+
+	DSSJ_out.close();
+
+	//free all memory allocated in this function
+	free(outlierScoreArr);
+	free(totalNumberOfNeighbors);
+	free(keyValuePairPointIDNumNeighbors);
+	
+
+}
+
+
+
+void storeOutlierScoresForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors, unsigned int * outlierScoreArr)
+{
+
+	///////////////////
+	//Outlier criterion: print the number of points each point has within epsilon
+
+
+
+	//For each point, compute the total squared distances to its k neighbors
+	
+	struct keyValNumPointsStruct * keyValuePairPointIDNumNeighbors = (struct keyValNumPointsStruct *)malloc(sizeof(keyValNumPointsStruct)*databaseSize);
+	for (unsigned int i=0; i<databaseSize; i++)
+	{
+		totalNumberOfNeighbors[i]=neighborTable[i].indexmax-neighborTable[i].indexmin+1;
+		
+		//for sorting key/value pairs
+		keyValuePairPointIDNumNeighbors[i].pointID=i;
+		keyValuePairPointIDNumNeighbors[i].counts=totalNumberOfNeighbors[i];
+	}
+
+	//sort the point IDs and values by key/value pair
+	std::sort(keyValuePairPointIDNumNeighbors, keyValuePairPointIDNumNeighbors+databaseSize, compareByPointValue);
+	
+	//store the scores for each point in an array
+	
+
+	for(int i=0; i<databaseSize; i++)
+	{
+		int pointId=keyValuePairPointIDNumNeighbors[i].pointID;
+		outlierScoreArr[pointId]=i;
+	}
+
+	//end outlier criterion
+	///////////////////
+
+
+}
 
 
 

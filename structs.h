@@ -13,6 +13,14 @@
 #include <thrust/sort.h>
 #include "params.h"
 
+//for outlier detection
+
+struct keyValNumPointsStruct
+{
+	int pointID;
+	uint64_t counts;
+};
+
 struct key_val_sort
 {
 		unsigned int pid; //point id
