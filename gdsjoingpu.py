@@ -146,11 +146,11 @@ def nullify_output(suppress_stdout=True, suppress_stderr=True):
 def gdsjoin(DATASET, EPSILON, NDIM, DTYPE, verbose=False):
     if(verbose==False):
         with HideOutput():
-            ret_outNumNeighborsWithinEps_wrapper, ret_neighborTable_wrapper, ret_outOutlierRanking_wrapper = gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE)            
+            ret_outNumNeighborsWithinEps_wrapper, ret_neighborTable_wrapper = gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE)            
     else:
-        ret_outNumNeighborsWithinEps_wrapper, ret_neighborTable_wrapper, ret_outOutlierRanking_wrapper = gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE)
+        ret_outNumNeighborsWithinEps_wrapper, ret_neighborTable_wrapper = gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE)
 
-    return ret_outNumNeighborsWithinEps_wrapper, ret_neighborTable_wrapper, ret_outOutlierRanking_wrapper
+    return ret_outNumNeighborsWithinEps_wrapper, ret_neighborTable_wrapper
 
 #main function
 def gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE):
@@ -193,10 +193,8 @@ def gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE):
         c_DATASET=convert_type(DATASET, c_double)
         
 
-    # Allocate arrays for results -- the number of neighbors for each object and outlier scores
-    # where outlier scores may not be used
+    # Allocate arrays for results -- the number of neighbors for each object
     ret_outNumNeighborsWithinEps = np.zeros(numPoints, dtype=c_uint)
-    ret_outOutlierRanking = np.zeros(numPoints, dtype=c_uint)
 
     #we don't know the size of the neighbortable, so we need to allocate that once we return from the
     #main function
@@ -204,16 +202,16 @@ def gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE):
     #float
     if (DTYPE=="float"):
         #define the argument types
-        libgdsjoin.GDSJoinPy.argtypes = [array_1d_float, c_uint, c_float, c_uint, array_1d_unsigned, array_1d_unsigned]
+        libgdsjoin.GDSJoinPy.argtypes = [array_1d_float, c_uint, c_float, c_uint, array_1d_unsigned]
         #call the library
-        libgdsjoin.GDSJoinPy(c_DATASET, c_uint(numPoints), c_float(EPSILON), c_uint(NDIM), ret_outNumNeighborsWithinEps, ret_outOutlierRanking)
+        libgdsjoin.GDSJoinPy(c_DATASET, c_uint(numPoints), c_float(EPSILON), c_uint(NDIM), ret_outNumNeighborsWithinEps)
 
     #double
     if (DTYPE=="double"):    
         #define the argument types
-        libgdsjoin.GDSJoinPy.argtypes = [array_1d_double, c_uint, c_double, c_uint, array_1d_unsigned, array_1d_unsigned]
+        libgdsjoin.GDSJoinPy.argtypes = [array_1d_double, c_uint, c_double, c_uint, array_1d_unsigned]
         #call the library
-        libgdsjoin.GDSJoinPy(c_DATASET, c_uint(numPoints), c_double(EPSILON), c_uint(NDIM), ret_outNumNeighborsWithinEps, ret_outOutlierRanking)
+        libgdsjoin.GDSJoinPy(c_DATASET, c_uint(numPoints), c_double(EPSILON), c_uint(NDIM), ret_outNumNeighborsWithinEps)
 
     
     resultSetSize=np.sum(ret_outNumNeighborsWithinEps)
@@ -224,13 +222,14 @@ def gdsjoinmain(DATASET, EPSILON, NDIM, DTYPE):
     ret_neighborTable = np.zeros(resultSetSize, dtype=c_uint)
 
     #Execute C function to store the neighbors into the neighbortable
+    #and free memory on the heap
     libgdsjoin.copyResultIntoPythonArray.argtypes = [array_1d_unsigned, c_uint]
     libgdsjoin.copyResultIntoPythonArray(ret_neighborTable, c_uint(resultSetSize))     
 
     # print(ret_neighborTable)
     # print("[Python- validation] Sum of indices of neighbors: %lu" %(np.sum(ret_neighborTable)))
 
-    return ret_outNumNeighborsWithinEps, ret_neighborTable, ret_outOutlierRanking
+    return ret_outNumNeighborsWithinEps, ret_neighborTable
 
 
 

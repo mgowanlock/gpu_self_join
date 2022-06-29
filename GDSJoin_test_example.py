@@ -24,12 +24,12 @@ if __name__ == "__main__":
     dataset = df.values.flatten().tolist()
     epsilon = 1.0
     
-    verbose=False #True/False --- this is the C output from the shared library
+    verbose=True #True/False --- this is the C output from the shared library
     dtype="float"
     numdim=2
     
 
-    numNeighbors, neighborTable, outlierRanking = dssj.gdsjoin(dataset, epsilon, numdim, dtype, verbose)    
+    numNeighbors, neighborTable = dssj.gdsjoin(dataset, epsilon, numdim, dtype, verbose)    
 
         
 

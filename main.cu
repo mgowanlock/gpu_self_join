@@ -48,12 +48,13 @@ void sortInNDBins(std::vector<std::vector <DTYPE> > *dataPoints);
 void ReorderByDimension(std::vector<std::vector <DTYPE> > *NDdataPoints);
 void storeOutlierScoresForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors, unsigned int * outlierScoreArr);
 
-//printing of the neighbortable for outlier detection
+//printing of the neighbortable
 void printNeighborTable(unsigned int databaseSize, struct neighborTableLookup * neighborTable);
-void printOutlierScores(unsigned int databaseSize, struct neighborTableLookup * neighborTable);
 
 //store the neighbors for python wrapper
 unsigned int * storeNeighborTableContiguousPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable);
+//store the number of neighbors for the Python wrapper
+void storeNumberOfNeighborsForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors);
 
 //sort ascending
 bool compareByPointValue(const keyValNumPointsStruct &a, const keyValNumPointsStruct &b)
@@ -327,18 +328,6 @@ int main(int argc, char *argv[])
 	#endif //end if stamp==1
 	#endif //endif print neighbortable
 
-
-	#if PRINTOUTLIERSCORES==1
-	#if STAMP==0
-	printOutlierScores(NDdataPoints.size(), neighborTable);
-	#endif
-
-	#if STAMP==1
-	printf("\nError PRINTOUTLIERSCORES==1: Note that printing the outliers was only implemented when unicomp is disabled (STAMP==0).\n")
-	#endif
-
-
-	#endif
 }
 
 
@@ -368,26 +357,25 @@ if(SEARCHMODE == 9) {
 //this is a pointer used that will get used from the Python interface
 //Needs to be global
 unsigned int * neighborTableResultContiguous;
-//the last two returned arrays are for using DSSJ for outlier detection: outNumNeighborsWithinEps, outOutlierRanking 
-extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon, unsigned int NDIM, unsigned int * outNumNeighborsWithinEps, unsigned int * outOutlierRanking)
+extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon, unsigned int NDIM, unsigned int * outNumNeighborsWithinEps)
 {
 
 	//check that the number of data dimensions is greater than or equal to the number of indexed dimensions
 	assert(GPUNUMDIM>=NUMINDEXEDDIM);
-		
-	omp_set_nested(1);	
-	/////////////////////////
-	// Get information from command line
-	//1) the dataset, 2) epsilon, 3) number of dimensions
-	/////////////////////////
 
-	
+	//check that STAMP is disabled, as storing the neighbortable for Python with STAMP is enabled was not implemented
+	#if STAMP==1
+	fprintf(stderr,"\nError: Note that storing the neighbortable was only implemented when unicomp is disabled (STAMP==0).\n")
+	assert(STAMP==0);
+	#endif
+			
 	if (GPUNUMDIM!=NDIM){
 		printf("\nERROR: The number of dimensions defined for the GPU in the shared library is not the same as the number of dimensions defined in the Python interface.\n GPUNUMDIM=%d, NDIM=%d Exiting!!!",GPUNUMDIM,NDIM);
 		return;
 	}
 
-	
+	omp_set_nested(1);		
+
 	printf("\nEpsilon: %f",epsilon);
 	printf("\nNumber of dimensions (NDIM): %d\n",NDIM);
 
@@ -492,24 +480,18 @@ extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon
 	//Some related neighbortable data are shown below.
 
 
+	
+	#if STAMP==0
 	//pointer for the python implementation to all of the neighbors
+	storeNumberOfNeighborsForPython(NDdataPoints.size(), neighborTable, outNumNeighborsWithinEps);
 	neighborTableResultContiguous=storeNeighborTableContiguousPython(NDdataPoints.size(), neighborTable);
+	#endif
+
+
 	
 
-	#if PRINTOUTLIERSCORES==1
-	#if STAMP==0
-
-	// printOutlierScores(NDdataPoints.size(), neighborTable);
-	storeOutlierScoresForPython(NDdataPoints.size(), neighborTable, outNumNeighborsWithinEps, outOutlierRanking);
-
-	#endif
-
-	#if STAMP==1
-	printf("\nError PRINTOUTLIERSCORES==1: Note that printing the outliers was only implemented when unicomp is disabled (STAMP==0).\n")
-	#endif
 
 
-	#endif
 
 	
 }
@@ -539,11 +521,8 @@ unsigned int * storeNeighborTableContiguousPython(unsigned int databaseSize, str
 	unsigned long int cnt=0;
 	for (int i=0; i<databaseSize; i++){
 		for (int j=neighborTable[i].indexmin; j<=neighborTable[i].indexmax; j++){
-			
 			//store result for passing back to Python
 			neighborTableResult[cnt]=neighborTable[i].dataPtr[j];
-			//for validation
-			// totalCountNeighbors+=neighborTableResult[cnt];
 			//increment cnt
 			cnt++;
 		}
@@ -640,43 +619,52 @@ void printOutlierScores(unsigned int databaseSize,struct neighborTableLookup * n
 
 
 
-void storeOutlierScoresForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors, unsigned int * outlierScoreArr)
+void storeNumberOfNeighborsForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors)
 {
-
-	///////////////////
-	//Outlier criterion: print the number of points each point has within epsilon
-
-
-
-	//For each point, compute the total squared distances to its k neighbors
-	
-	struct keyValNumPointsStruct * keyValuePairPointIDNumNeighbors = (struct keyValNumPointsStruct *)malloc(sizeof(keyValNumPointsStruct)*databaseSize);
 	for (unsigned int i=0; i<databaseSize; i++)
 	{
 		totalNumberOfNeighbors[i]=neighborTable[i].indexmax-neighborTable[i].indexmin+1;
-		
-		//for sorting key/value pairs
-		keyValuePairPointIDNumNeighbors[i].pointID=i;
-		keyValuePairPointIDNumNeighbors[i].counts=totalNumberOfNeighbors[i];
 	}
-
-	//sort the point IDs and values by key/value pair
-	std::sort(keyValuePairPointIDNumNeighbors, keyValuePairPointIDNumNeighbors+databaseSize, compareByPointValue);
-	
-	//store the scores for each point in an array
-	
-
-	for(int i=0; i<databaseSize; i++)
-	{
-		int pointId=keyValuePairPointIDNumNeighbors[i].pointID;
-		outlierScoreArr[pointId]=i;
-	}
-
-	//end outlier criterion
-	///////////////////
-
-
 }
+
+
+// void storeOutlierScoresForPython(unsigned int databaseSize, struct neighborTableLookup * neighborTable, unsigned int * totalNumberOfNeighbors, unsigned int * outlierScoreArr)
+// {
+
+// 	///////////////////
+// 	//Outlier criterion: print the number of points each point has within epsilon
+
+
+
+// 	//For each point, compute the total squared distances to its k neighbors
+	
+// 	struct keyValNumPointsStruct * keyValuePairPointIDNumNeighbors = (struct keyValNumPointsStruct *)malloc(sizeof(keyValNumPointsStruct)*databaseSize);
+// 	for (unsigned int i=0; i<databaseSize; i++)
+// 	{
+// 		totalNumberOfNeighbors[i]=neighborTable[i].indexmax-neighborTable[i].indexmin+1;
+		
+// 		//for sorting key/value pairs
+// 		keyValuePairPointIDNumNeighbors[i].pointID=i;
+// 		keyValuePairPointIDNumNeighbors[i].counts=totalNumberOfNeighbors[i];
+// 	}
+
+// 	//sort the point IDs and values by key/value pair
+// 	std::sort(keyValuePairPointIDNumNeighbors, keyValuePairPointIDNumNeighbors+databaseSize, compareByPointValue);
+	
+// 	//store the scores for each point in an array
+	
+
+// 	for(int i=0; i<databaseSize; i++)
+// 	{
+// 		int pointId=keyValuePairPointIDNumNeighbors[i].pointID;
+// 		outlierScoreArr[pointId]=i;
+// 	}
+
+// 	//end outlier criterion
+// 	///////////////////
+
+
+// }
 
 
 

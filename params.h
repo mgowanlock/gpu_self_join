@@ -17,10 +17,10 @@
 #define BLOCKSIZE 256
  
 //Number of dimensions of the data (n)
-#define GPUNUMDIM 3
+#define GPUNUMDIM 2
 
 //Number of indexed dimensions (k)
-#define NUMINDEXEDDIM 3
+#define NUMINDEXEDDIM 2
 
 //data type of the input dataset (float or double)
 #define DTYPE float
@@ -30,9 +30,6 @@
 //Utility
 //used for outputting the neighbortable at the end
 #define PRINTNEIGHBORTABLE 0
-//used for printing outlier scores based on point density at the end of program execution
-#define PRINTOUTLIERSCORES 1 //make sure to disable unicomp (STAMP==0) if printing the outlier scores (it was only implemented for this case)
-//end utility
 ///////////////////////
 
 
