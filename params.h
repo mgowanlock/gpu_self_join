@@ -17,13 +17,13 @@
 #define BLOCKSIZE 256
  
 //Number of dimensions of the data (n)
-#define GPUNUMDIM 2
+#define GPUNUMDIM 100
 
 //Number of indexed dimensions (k)
-#define NUMINDEXEDDIM 2
+#define NUMINDEXEDDIM 6
 
 //data type of the input dataset (float or double)
-#define DTYPE float
+#define DTYPE double
 
 
 ///////////////////////

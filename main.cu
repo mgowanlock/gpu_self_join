@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
 	//check that the number of data dimensions is greater than or equal to the number of indexed dimensions
 	assert(GPUNUMDIM>=NUMINDEXEDDIM);
 		
-	omp_set_nested(1);	
+	omp_set_max_active_levels(3);
 	/////////////////////////
 	// Get information from command line
 	//1) the dataset, 2) epsilon, 3) number of dimensions
@@ -374,7 +374,7 @@ extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon
 		return;
 	}
 
-	omp_set_nested(1);		
+	omp_set_max_active_levels(3);
 
 	printf("\nEpsilon: %f",epsilon);
 	printf("\nNumber of dimensions (NDIM): %d\n",NDIM);
@@ -488,6 +488,12 @@ extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon
 	#endif
 
 
+	//Free neighbortable memory to prevent memory leak when using the shared library called by the Python library
+	for (int i=0; i<pointersToNeighbors.size(); i++)
+	{
+		delete pointersToNeighbors[i].dataPtr;
+	}
+	
 	
 
 

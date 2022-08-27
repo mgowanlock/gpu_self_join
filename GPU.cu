@@ -1137,7 +1137,7 @@ void constructNeighborTableKeyValueWithPtrs(int * pointIDKey, int * pointInDistV
 void constructNeighborTableKeyValueWithPtrsWithMultipleUpdatesMultipleDataArrays(int * pointIDKey, int * pointInDistValue, struct neighborTableLookup * neighborTable, int * pointersToNeighbors, unsigned int * cnt, int * uniqueKeys, int * uniqueKeyPosition, unsigned int numUniqueKeys)
 {
 
-	omp_set_nested(1);
+	omp_set_max_active_levels(3);
 
 	#pragma omp parallel for num_threads(8)
 	for (unsigned int i=0; i<(*cnt); i++)
@@ -1252,7 +1252,7 @@ void constructNeighborTableKeyValue(int * pointIDKey, int * pointInDistValue, st
 	//the unique keys obtained above. Since multiple threads access this function, we don't want to 
 	//do too many memory operations while GPU memory transfers are occurring, or else we decrease the speed that we 
 	//get data off of the GPU
-	omp_set_nested(1);
+	omp_set_max_active_levels(3);
 	#pragma omp parallel for reduction(+:count) num_threads(2) schedule(static,1)
 	for (int i=0; i<uniqueKeyData.size()-1; i++) 
 	{
