@@ -216,8 +216,14 @@ unsigned long long callGPUBatchEst(unsigned int * DBSIZE, DTYPE* dev_database, D
 	
 	
 	unsigned int GPUBufferSize=GPUBUFFERSIZE;
-	
+
+	#ifndef PYTHON	
 	double alpha=0.05; //overestimation factor
+	#endif
+
+	#ifdef PYTHON
+	double alpha=0.10;
+	#endif
 	
 	uint64_t estimatedTotalSizeWithAlpha=estimatedNeighbors*(1.0+alpha*1.0);
 	printf("\nEstimated total result set size: %lu", estimatedNeighbors);
@@ -228,7 +234,7 @@ unsigned long long callGPUBatchEst(unsigned int * DBSIZE, DTYPE* dev_database, D
 	if (estimatedNeighbors<(GPUBufferSize*GPUSTREAMS))
 	{
 		printf("\nSmall buffer size, increasing alpha to: %f",alpha*3.0);
-		GPUBufferSize=estimatedNeighbors*(1.0+(alpha*2.0))/(GPUSTREAMS);		//we do 3*alpha for small datasets because the
+		GPUBufferSize=estimatedNeighbors*(1.0+(alpha*3.0))/(GPUSTREAMS);		//we do 3*alpha for small datasets because the
 																		//sampling will be worse for small datasets
 																		//but we fix the number of streams.			
 	}
