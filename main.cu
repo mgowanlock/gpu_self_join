@@ -357,7 +357,7 @@ if(SEARCHMODE == 9) {
 //this is a pointer used that will get used from the Python interface
 //Needs to be global
 unsigned int * neighborTableResultContiguous;
-extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon, unsigned int NDIM, unsigned int * outNumNeighborsWithinEps)
+extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon, unsigned int NDIM, int gpuContext, unsigned int * outNumNeighborsWithinEps)
 {
 
 	//check that the number of data dimensions is greater than or equal to the number of indexed dimensions
@@ -375,6 +375,8 @@ extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon
 	}
 
 	omp_set_max_active_levels(3);
+
+	cudaSetDevice(gpuContext);
 
 	printf("\nEpsilon: %f",epsilon);
 	printf("\nNumber of dimensions (NDIM): %d\n",NDIM);
@@ -401,9 +403,9 @@ extern "C" void GDSJoinPy(DTYPE * dataset, unsigned int NUMPOINTS, DTYPE epsilon
 	ofstream gpu_stats;
 	gpu_stats.open(fname,ios::app);	
 
-	printf("\n*****************\nWarming up GPU:\n*****************\n");
-	warmUpGPU();
-	printf("\n*****************\n");
+	// printf("\n*****************\nWarming up GPU:\n*****************\n");
+	// warmUpGPU();
+	// printf("\n*****************\n");
 
 	DTYPE * minArr= new DTYPE[NUMINDEXEDDIM];
 	DTYPE * maxArr= new DTYPE[NUMINDEXEDDIM];
