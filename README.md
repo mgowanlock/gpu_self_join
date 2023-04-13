@@ -5,7 +5,7 @@ Authors: Mike Gowanlock and Ben Karsin
 Acknowledgements: This material is based upon work supported by the National Science Foundation under Grants 1849559, 1533823, and 1745331 and Fonds de la Recherche Scientifique-FNRS under Grant no MISU F 6001 1.
 
 For more information, see the following papers:
-
+* Gowanlock, M., Gallet, B., & Donnelly, B. (2023). Optimization and Comparison of Coordinate- and Metric-Based Indexes on GPUs for Distance Similarity Searches. ***To appear in the Proceedings of the International Conference on Computational Science 2023 (ICCS 2023)***. 
 * Gowanlock, M., & Karsin, B. (2019). Accelerating the similarity self-join using the GPU. ***Journal of parallel and distributed computing***, 133, 107-123.
 * Gowanlock, M., & Karsin, B. (2019). GPU-Accelerated Similarity Self-Join for Multi-Dimensional Data. ***In Proceedings of the 15th International Workshop on Data Management on New Hardware*** (pp. 1-9).
 
